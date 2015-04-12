@@ -1,2 +1,2 @@
 # sctp_messager
-Scatp messager
+Sctp messager
