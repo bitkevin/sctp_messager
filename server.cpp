@@ -8,9 +8,8 @@
 #include <arpa/inet.h>
 #include <stdlib.h>
 #include <iostream>
-#include <errno.h>
 #include <unistd.h>
-#include <sstream>
+#include <errno.h>
 
 using namespace std;
 
@@ -19,86 +18,86 @@ using namespace std;
 
 int main()
 {
+ int listenSock, connSock, ret;
+  struct sockaddr_in servaddr;
+  char buffer[MAX_BUFFER+1];
+  time_t currentTime;
 
-    int host_port = 87404;
-    struct sockaddr_in saddr, caddr;
-    struct sctp_initmsg initmsg;
-    char buff[INET_ADDRSTRLEN];
-    char buffer[MAX_BUFFER+1] = "Message ##\n";
+  /* Создание сокета SCTP в стиле TCP */
+  listenSock = socket( AF_INET, SOCK_STREAM, IPPROTO_SCTP );
 
-    int sfd = socket( AF_INET, SOCK_STREAM, IPPROTO_SCTP );
+  cout << "server socket " << listenSock << endl;
+  /* Принимается соединение с любого интерфейса */
+  bzero( (void *)&servaddr, sizeof(servaddr) );
+  servaddr.sin_family = AF_INET;
+  servaddr.sin_addr.s_addr = htonl( INADDR_ANY );
+  servaddr.sin_port = htons(4048);
 
-if(sfd == -1){
-cout << "socket open" << sfd << " error:" << errno << "  "<< strerror(errno) << endl;
-        exit (0);
-}
+  /* Адрес привязки – любой, порт - MY_PORT_NUM */
+  ret = bind( listenSock,
+               (struct sockaddr *)&servaddr,
+                (socklen_t)sizeof(servaddr) );
+
+ cout << "server socket bind" << ret << endl;
+if(ret == -1)
+  cout << "error " << errno << " " << strerror(errno) << endl;
+
+  /* Сокет сервера переводится в состояние ожидания соединения */
+  int listen_result = listen( listenSock, 5 );
+  
+ cout << "server socket listen" << listen_result << endl;
+if(listen_result == -1)
+  cout << "error " << errno << " " << strerror(errno) << endl;
+
+  /* Цикл работы сервера... */
+  while( 1 ) {
+
+    /* Ожидание соединения клиента */
+    connSock = accept( listenSock,
+                        (struct sockaddr *)NULL,
+                        (socklen_t *)NULL );
+                        
+ cout << "server socket accept " << connSock << endl;
+ 
+if(connSock == -1)
+  cout << "error " << errno << " " << strerror(errno) << endl;
+
+    /* Соединение с новым клиентом */
+
+    /* Выясняется текущее время */
+    currentTime = time(NULL);
+
+    /* Посылается текущее время по потоку 0 (поток для локального времени) */
+    snprintf( buffer, MAX_BUFFER, "%s\n", ctime(&currentTime) );
+
+    ret = sctp_sendmsg( connSock,
+                          (void *)buffer, (size_t)strlen(buffer),
+                          NULL, 0, 0, 0, 1, 0, 0 );
+                          
+ cout << "server socket 1 sctp_sendmsg " << ret << endl;
+ 
+if(ret == -1)
+  cout << "error " << errno << " " << strerror(errno) << endl;
 
 
-    bzero( (void *)&saddr, sizeof(saddr) );
-    saddr.sin_family = AF_INET;
-    saddr.sin_addr.s_addr = htonl( INADDR_ANY );
-    saddr.sin_port = htons(host_port);
+    /* Посылается GMT по потоку 1 (поток для GMT) */
+    snprintf( buffer, MAX_BUFFER, "%s\n",
+               asctime( gmtime( &currentTime ) ) );
 
-if(bind( sfd, (struct sockaddr *)&saddr, sizeof(saddr)) == -1){
-cout << "bind failed" << sfd << " error:" << errno << "  "<< strerror(errno) << endl;
-        exit (0);
-}
+    ret = sctp_sendmsg( connSock,
+                          (void *)buffer, (size_t)strlen(buffer),
+                          NULL, 0, 0, 0, 2, 0, 0 );
 
-    memset( &initmsg, 0, sizeof(initmsg) );
-    initmsg.sinit_num_ostreams = 3;
-    initmsg.sinit_max_instreams = 3;
-    initmsg.sinit_max_attempts = 2;
-    setsockopt(sfd, IPPROTO_SCTP, SCTP_INITMSG,&initmsg, sizeof(initmsg));
-
-for(;;)
-{
-    if(listen( sfd, 3 ) == -1)
-        cout << "listen " << sfd << " error:" << errno << "  "<< strerror(errno) << endl;
+ cout << "server socket 2 sctp_sendmsg " << ret << endl;
+ 
+if(ret == -1)
+  cout << "error " << errno << " " << strerror(errno) << endl;
 
 
-    cout << "listen" << endl;
+    /* Закрывается клиентское соединение */
+    close( connSock );
 
-    for(;;) {
-        printf("Server Running\n");
+  }
 
-	socklen_t len = sizeof(caddr);
-        int cfd = accept(sfd, (struct sockaddr *)&caddr, &len);
-
-	if(cfd == -1)
-	cout << "accept " << cfd << " error:" << errno << "  "<< strerror(errno) << endl;
-
-
-      	cout << "Connected to " << inet_ntop(AF_INET, &caddr.sin_addr, buff,sizeof(buff)) << endl;
-
-        for(int i=0; i< 3; i++) {
-/* Changing 9th character the character after # in the message buffer */
-	cout << "next" << endl;
-
-	stringstream ss("");
-
-	ss << " send message " << i ;
-	strcpy(buffer, ss.str().c_str());
-
-	cout << ss.str() << endl;
-
-	sctp_sendmsg( cfd, ss.str().c_str(),ss.str().length(), NULL, 0, 0, 0, i , 0, 0);
-	//cout << "send failed " << cfd << " error:" << errno << "  "<< strerror(errno) << endl;
-
-	}
-
-	cout << "close connection" << endl;
-
-	close( cfd );
-//== -1)
-//	cout << "client close " << cfd << " error:" << errno << "  "<< strerror(errno) << endl;
-    }
-}
-
-cout << "end infinity" << endl;
-
-//if(close(sfd)==-1){
-//	cout << "close failed" << sfd << " error:" << errno << "  "<< strerror(errno) << endl;
-//}
-
-    return 0;
+  return 0;
 }
